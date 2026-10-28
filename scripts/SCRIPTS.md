@@ -104,9 +104,29 @@ Interactive first-time Let's Encrypt issuance. Writes `DOMAIN_NAME` and `SSL_EMA
 
 ### `renew-ssl.sh`
 
-Renews using the **host's** certbot, not the container — and hardcodes `/home/alokkrsahu/ai_catalogue`. It relies on a `deploy_hook` in the renewal config to copy certificates into `nginx/ssl/` and reload nginx. Note that its success check always reports 0 because of `set -e`.
+Renews using the **host's** certbot, not the container, against the project-local
+store in `certbot/certs` — and hardcodes `/home/alokkrsahu/ai_catalogue`. The
+per-certificate hooks in `certbot/certs/renewal/<domain>.conf` do the work:
+`pre_hook` stops nginx to free port 80 for the standalone challenge,
+`renew_hook` copies the new certificate into `nginx/ssl/`, and `post_hook`
+starts nginx again. Renewal therefore causes a short outage — but only when a
+certificate is actually due; certbot skips the hooks entirely otherwise, so
+running the script when nothing is due does not touch nginx.
 
-This script is installed in the crontab and runs unattended; do not rename or move it without updating cron.
+It takes a non-blocking `flock`, so an overrunning renewal can never have two
+certbots competing for port 80, and reports the certificate's real expiry plus
+what nginx is actually serving, so a `renew_hook` that failed to copy is
+visible rather than silent.
+
+> **This must remain the only renewal mechanism.** certbot's own
+> `snap.certbot.renew.timer` renews the *system* store (`/etc/letsencrypt`),
+> which nothing here serves, has no hook to install a new certificate, and uses
+> the standalone authenticator without stopping nginx — so it fails on "port 80
+> in use" on every run. Verify with
+> `systemctl is-enabled snap.certbot.renew.timer` (expected: `disabled`).
+
+This script is installed in the crontab and runs unattended; do not rename or
+move it without updating cron.
 
 ---
 

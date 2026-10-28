@@ -42,7 +42,6 @@ Open items are a to-do list. Items that have been fixed are moved to the **Resol
 | B20 | **`nginx.dev.conf` requires another project's containers** (`chatgpt_analytics_*`) to be on the network, or nginx will not start. | `nginx/nginx.dev.conf` |
 | B21 | **`nginx.ssl.conf` lacks the 1500 s API timeouts** present in the dev and prod configs, so switching to the SSL overlay would break long document processing at nginx's 60 s default. | `nginx/nginx.ssl.conf` |
 | B23 | **`stop.sh` never stops** `redis`, `attu` or `frontend-dev`. | `scripts/stop.sh` |
-| B25 | **`nginx.ssl.conf` cannot load its certificates.** It expects `/etc/nginx/ssl/live/<domain>/fullchain.pem`, but the compose mounts place the certificates directly at `/etc/nginx/ssl/`. `nginx -t` fails with `cannot load certificate`. The file is unused (the live stack runs `nginx.dev.conf`), so this is latent rather than breaking. | `nginx/nginx.ssl.conf` |
 
 ---
 
