@@ -135,7 +135,7 @@ CMD ["sh", "-c", "\
     echo 'Setting up container data...' && \
     python manage.py setup_container_data || echo 'setup_container_data skipped or failed (non-fatal)' && \
     echo 'Starting Gunicorn production server...' && \
-    exec gunicorn ai_catalogue.wsgi:application \
+    exec gunicorn core.wsgi:application \
         --bind 0.0.0.0:8000 \
         --workers 4 \
         --threads 2 \

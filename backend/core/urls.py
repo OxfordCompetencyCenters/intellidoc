@@ -46,6 +46,8 @@ from llm_eval.views import (
 # Import dynamic template URL management
 from templates.dynamic_urls import include_template_urls, TemplateURLManagementView
 
+from core.health import health, health_ready
+
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
 router.register(r'dashboard-icons', DashboardIconViewSet)
@@ -70,6 +72,12 @@ router.register(r'api-keys', APIKeyConfigViewSet)
 router.register(r'llm-comparisons', LLMComparisonViewSet)
 
 urlpatterns = [
+    # Container health probes. Kept first and unauthenticated: the
+    # Dockerfile.prod HEALTHCHECK, docker-compose.prod.yml and
+    # scripts/production.sh all poll /health/.
+    path('health/', health, name='health'),
+    path('health/ready/', health_ready, name='health_ready'),
+
     path('admin/', admin.site.urls),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

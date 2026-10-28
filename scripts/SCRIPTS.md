@@ -96,7 +96,7 @@ The only script that runs the production overlay:
 
 Sets `ENVIRONMENT=production`, `DEBUG=False`, and starts with `-f docker-compose.yml -f docker-compose.prod.yml`.
 
-> **This path does not currently work.** `Dockerfile.prod` runs `gunicorn ai_catalogue.wsgi:application`, but the Django project package is `core` — there is no `ai_catalogue` module, so Gunicorn exits immediately. The health gate also polls `/health/`, which is not a registered route. Both are tracked as B1 and B2 in [`../docs/KNOWN_ISSUES.md`](../docs/KNOWN_ISSUES.md).
+> **The two defects that blocked this path were fixed on 2026-10-28** (B1 and B2 in [`../docs/KNOWN_ISSUES.md`](../docs/KNOWN_ISSUES.md)): Gunicorn now runs `core.wsgi:application`, and `/health/` is a registered route. The overlay has not yet been exercised under sustained production load, so treat the first run as a deployment, not a formality — and note `deploy.replicas: 2` remains a no-op under `docker compose`.
 
 ### `setup-ssl.sh`
 

@@ -190,16 +190,29 @@ Caveats worth knowing:
 
 ## 7. Production mode — current state
 
-`docker-compose.prod.yml` and `Dockerfile.prod` describe a real production posture: Gunicorn with 4 workers, `DEBUG=False`, `SECURE_SSL_REDIRECT`, HSTS, tuned Postgres, resource limits. **That path does not currently start**, for two independent reasons:
+`docker-compose.prod.yml` and `Dockerfile.prod` describe a real production posture: Gunicorn with 4 workers, `DEBUG=False`, `SECURE_SSL_REDIRECT`, HSTS, tuned Postgres, resource limits. **The two defects that prevented it from starting have been fixed** (2026-10-28):
 
-1. **Wrong WSGI module.** `Dockerfile.prod` runs `gunicorn ai_catalogue.wsgi:application`. The Django project package is `core` — the file is `backend/core/wsgi.py` and `manage.py` sets `DJANGO_SETTINGS_MODULE=core.settings`. There is no `ai_catalogue` package, so Gunicorn exits with `ModuleNotFoundError`. Gunicorn itself is installed (`requirements.txt`), so the fix is the module path: `core.wsgi:application`.
-2. **`/health/` is not a route.** `Dockerfile.prod`'s healthcheck, `docker-compose.prod.yml`, and `production.sh` all poll `http://localhost:8000/health/`, which is not registered in `core/urls.py` and returns 404. (nginx answers `/health` without a trailing slash itself, which does not help the container healthcheck.) Either add the route or point the healthcheck at `/admin/`.
+1. **WSGI module path — fixed.** `Dockerfile.prod` ran `gunicorn ai_catalogue.wsgi:application`, but the Django project package is `core` (`backend/core/wsgi.py`; `manage.py` sets `DJANGO_SETTINGS_MODULE=core.settings`). There is no `ai_catalogue` package, so Gunicorn exited with `ModuleNotFoundError`. It now runs `core.wsgi:application`.
+2. **`/health/` route — added.** `Dockerfile.prod`'s healthcheck, `docker-compose.prod.yml` and `production.sh` all poll `http://localhost:8000/health/`, which was not registered in `core/urls.py` and returned 404. `backend/core/health.py` now provides two probes, wired at the top of `core/urls.py`:
+
+   | Route | Purpose | Checks | Fails with |
+   |---|---|---|---|
+   | `/health/` | Liveness — is the process serving? | nothing external | never (200 while the worker is alive) |
+   | `/health/ready/` | Readiness — can it serve useful traffic? | PostgreSQL `SELECT 1` | 503 |
+
+   Milvus and Redis are deliberately **not** checked: document search degrades without them but the rest of the site works, so they must not be able to take the backend out of rotation. The existing `/api/vector-search/health/` is unsuitable as a container probe — it requires authentication (a probe gets 401) and reports on Milvus.
+
+   These resolve through Django's normal request path, so the probe's `Host` header must be in `ALLOWED_HOSTS`. The probes use `localhost`, which is in both the `settings.py` default and `.env.example` — **do not remove it**.
+
+   > **Through nginx these routes are shadowed.** Every nginx config carries a prefix `location /health` that returns a hardcoded `200 healthy`. Because it is a prefix match, not `location = /health`, it also swallows `/health/` and `/health/ready/`. Verified against the live site: `/health`, `/health/` and `/health/ready/` all return the literal string `healthy`, while the same paths straight to the backend return `{"status": "ok"}` and `{"status": "ready", "database": "ok"}`.
+   >
+   > This does not affect the container healthcheck or `production.sh`, which poll `http://localhost:8000/health/` and bypass nginx entirely. It does mean **an external caller cannot use these URLs to learn anything about backend readiness** — nginx answers `healthy` even if Django is down. Treat the public `/health` as an nginx liveness signal only. Making the Django probes externally meaningful would require changing the nginx blocks to `location = /health` and adding a proxied location for `/health/`; that has not been done, because the public site has no need to expose readiness.
 
 Additionally, `deploy.replicas: 2` in the prod overlay is ignored by `docker compose` (it is a Swarm directive) and would in any case conflict with the fixed `8000:8000` and `3000:3000` host port bindings.
 
 **Consequence:** the running deployment is the **development** stack — `Dockerfile.dev`, Django `runserver`, `DEBUG=True`, `DJANGO_DEBUG_TOOLBAR=True`, the Vite dev server, and `nginx.dev.conf`. Setting `DEBUG=False` in `.env` has no effect, because `docker-compose.override.yml` sets `DEBUG: "True"` in the service `environment` block, which takes precedence over `env_file`.
 
-If you need a genuine production deployment, the minimum work is: fix the Gunicorn module path, add or redirect the health endpoint, and always start with `-f docker-compose.yml -f docker-compose.prod.yml`.
+To actually run in production mode, start with `-f docker-compose.yml -f docker-compose.prod.yml` (or `./scripts/production.sh`), which excludes the override file. The prod overlay has not been exercised under sustained load, so treat the first run as a real deployment.
 
 ---
 
@@ -253,8 +266,8 @@ Collected for triage; each is verifiable in the file cited.
 | # | Issue | Location |
 |---|---|---|
 | 1 | Live deployment runs the dev stack with `DEBUG=True` and `runserver` | `docker-compose.override.yml` |
-| 2 | `gunicorn ai_catalogue.wsgi` — module does not exist | `backend/Dockerfile.prod` |
-| 3 | `/health/` healthcheck target is not a registered route | `Dockerfile.prod`, `docker-compose.prod.yml`, `production.sh` |
+| ~~2~~ | ~~`gunicorn ai_catalogue.wsgi` — module does not exist~~ **Fixed 2026-10-28** — now `core.wsgi:application` | `backend/Dockerfile.prod` |
+| ~~3~~ | ~~`/health/` healthcheck target is not a registered route~~ **Fixed 2026-10-28** — `/health/` and `/health/ready/` added | `backend/core/health.py`, `core/urls.py` |
 | 4 | Literal Fernet key committed as `API_KEY_ENCRYPTION_KEY` default | `docker-compose.yml` |
 | 7 | `nginx/nginx.conf` mounted by nothing; base nginx has no config | `docker-compose.yml` |
 | 8 | Duplicate mount target `/etc/nginx/ssl` from two sources | `docker-compose.yml` |

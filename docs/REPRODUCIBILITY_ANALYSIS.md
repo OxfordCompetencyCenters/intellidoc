@@ -100,7 +100,7 @@ Live values, all image defaults:
 | `max_connections` | 100 |
 | `log_min_duration_statement` | `-1` (slow-query logging off) |
 
-Tuning *does* exist in `docker-compose.prod.yml` (`max_connections=200`, `shared_buffers=256MB`, …) — but that overlay **cannot start** (wrong Gunicorn module path and a missing `/health/` route, tracked as B1/B2 in `KNOWN_ISSUES.md`). So in practice nobody, here or on a clone, ever gets the tuned configuration.
+Tuning *does* exist in `docker-compose.prod.yml` (`max_connections=200`, `shared_buffers=256MB`, …) — and since B1/B2 were fixed on 2026-10-28 that overlay can start. It is still not what runs here by default: `docker-compose.override.yml` is auto-merged by any bare `docker compose` command, so the tuned configuration applies only when you start with `-f docker-compose.yml -f docker-compose.prod.yml`.
 
 **What the repo should carry:** move the tuning into the base compose file, or fix the production overlay so it is reachable. Also worth enabling `log_min_duration_statement` so slow queries are visible at all.
 
