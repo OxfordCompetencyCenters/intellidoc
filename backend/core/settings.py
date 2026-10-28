@@ -168,6 +168,45 @@ CORS_ALLOW_HEADERS = [
 csrf_origins = os.getenv('CSRF_TRUSTED_ORIGINS', 'http://localhost:5173,http://localhost:3000,https://oxfordcompetencycenters.github.io,https://aicc.uksouth.cloudapp.azure.com,https://eng.ox.ac.uk,https://oerc.ox.ac.uk')
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(',') if origin.strip()]
 
+# ---------------------------------------------------------------------------
+# HTTPS / transport security
+#
+# docker-compose.prod.yml sets SECURE_SSL_REDIRECT and the SECURE_HSTS_* vars,
+# but nothing here read them, so the production overlay's "hardening" did
+# nothing at all. They are honoured now.
+#
+# Every default is the permissive one, so development and the current running
+# stack are unaffected: these only switch on when the prod overlay sets them.
+# ---------------------------------------------------------------------------
+
+def _env_bool(name, default=False):
+    return os.getenv(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# nginx terminates TLS and forwards plain HTTP to Gunicorn, so Django sees an
+# insecure request and would redirect forever with SECURE_SSL_REDIRECT on.
+# This makes it trust nginx's X-Forwarded-Proto instead. Every nginx config in
+# this repo sets that header.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+SECURE_SSL_REDIRECT = _env_bool('SECURE_SSL_REDIRECT', False)
+
+# The container healthcheck and scripts/production.sh probe
+# http://localhost:8000/health/ over plain HTTP from inside the container. With
+# SECURE_SSL_REDIRECT on, Django would answer those with a 301 to https, which
+# `curl -f` reports as success while never reaching the view - a healthcheck
+# that passes without checking anything. Exempt the probe paths (the values are
+# regexes matched against the path without the leading slash).
+SECURE_REDIRECT_EXEMPT = [r'^health/$', r'^health/ready/$']
+
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', False)
+SECURE_HSTS_PRELOAD = _env_bool('SECURE_HSTS_PRELOAD', False)
+
+# Cookies over HTTPS only, when running behind TLS.
+SESSION_COOKIE_SECURE = _env_bool('SESSION_COOKIE_SECURE', SECURE_SSL_REDIRECT)
+CSRF_COOKIE_SECURE = _env_bool('CSRF_COOKIE_SECURE', SECURE_SSL_REDIRECT)
+
 ROOT_URLCONF = 'core.urls'
 
 TEMPLATES = [

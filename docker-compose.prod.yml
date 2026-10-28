@@ -7,6 +7,22 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
+    volumes:
+      # Use the SAME volumes the development stack writes to. The base file
+      # declares backend_media/backend_logs, but docker-compose.override.yml
+      # has always pointed the running stack at the *_dev volumes, so that is
+      # where every uploaded document actually lives (60 files / 43 MB at the
+      # time of writing; backend_media is empty). Without this, switching to
+      # the production overlay would silently show an empty media root and
+      # every uploaded document would 404.
+      #
+      # The "_dev" name is historical, not a statement about the environment.
+      # Do not "tidy" it to backend_media without migrating the data first.
+      - backend_media_dev:/app/media
+      - backend_logs_dev:/app/logs
+      - milvus_volumes:/app/volumes
+      # collectstatic output, shared read-only with nginx which serves /static/
+      - backend_static:/app/staticfiles
     environment:
       ENVIRONMENT: production
       DEBUG: "False"
@@ -20,7 +36,10 @@ services:
       SECURE_HSTS_INCLUDE_SUBDOMAINS: "True"
       SECURE_HSTS_PRELOAD: "True"
     deploy:
-      replicas: 2
+      # NOTE: no `replicas:` here. It is a Swarm directive that `docker
+      # compose` ignores, and the fixed host port bindings would make a
+      # second instance fail to bind anyway. Scale with a real
+      # orchestrator, not this file.
       resources:
         limits:
           cpus: '1.0'
@@ -40,7 +59,10 @@ services:
     environment:
       NODE_ENV: production
     deploy:
-      replicas: 2
+      # NOTE: no `replicas:` here. It is a Swarm directive that `docker
+      # compose` ignores, and the fixed host port bindings would make a
+      # second instance fail to bind anyway. Scale with a real
+      # orchestrator, not this file.
       resources:
         limits:
           cpus: '0.5'
@@ -118,6 +140,10 @@ services:
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # Under Gunicorn with DEBUG=False Django serves neither /static/ nor
+      # /media/, so nginx serves both straight from the backend's volumes.
+      - backend_static:/var/www/static:ro
+      - backend_media_dev:/var/www/media:ro
     deploy:
       resources:
         limits:
@@ -134,3 +160,11 @@ networks:
     ipam:
       config:
         - subnet: 172.20.0.0/16
+
+# Declared so this overlay can be used with `-f docker-compose.yml -f
+# docker-compose.prod.yml`; they are the same external volumes the dev stack uses.
+volumes:
+  backend_media_dev:
+  backend_logs_dev:
+  milvus_volumes:
+  backend_static:
