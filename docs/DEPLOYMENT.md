@@ -212,7 +212,7 @@ Additionally, `deploy.replicas: 2` in the prod overlay is ignored by `docker com
 
 **Consequence:** the running deployment is the **development** stack — `Dockerfile.dev`, Django `runserver`, `DEBUG=True`, `DJANGO_DEBUG_TOOLBAR=True`, the Vite dev server, and `nginx.dev.conf`. Setting `DEBUG=False` in `.env` has no effect, because `docker-compose.override.yml` sets `DEBUG: "True"` in the service `environment` block, which takes precedence over `env_file`.
 
-To actually run in production mode, start with `-f docker-compose.yml -f docker-compose.prod.yml` (or `./scripts/production.sh`), which excludes the override file. The prod overlay has not been exercised under sustained load, so treat the first run as a real deployment.
+To actually run in production mode, start with `-f docker-compose.yml -f docker-compose.prod.yml` (or `./scripts/production.sh`), which excludes the override file. A further seven dev/prod parity defects were found and fixed on 2026-10-28 — missing routes, an upload cap, the wrong media volume, unserved `/media/` and `/static/`, inert security settings and shadowed health probes. **Read [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) before switching**; it carries the verification evidence and the switchover checklist. The prod overlay has not been exercised under sustained load, so treat the first run as a real deployment.
 
 ---
 
