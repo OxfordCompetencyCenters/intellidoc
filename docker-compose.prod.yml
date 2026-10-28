@@ -140,10 +140,11 @@ services:
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
-      # Under Gunicorn with DEBUG=False Django serves neither /static/ nor
-      # /media/, so nginx serves both straight from the backend's volumes.
+      # Under Gunicorn with DEBUG=False Django does not serve /static/, so
+      # nginx serves it from the backend's collectstatic volume. /media/ is
+      # deliberately NOT mounted: documents go through the authenticated
+      # API download route, never straight off disk.
       - backend_static:/var/www/static:ro
-      - backend_media_dev:/var/www/media:ro
     deploy:
       resources:
         limits:

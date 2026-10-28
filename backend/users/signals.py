@@ -1,8 +1,8 @@
 # users/signals.py
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import DocumentVectorStatus, ProjectVectorCollection, VectorProcessingStatus
+from .models import DocumentVectorStatus, ProjectVectorCollection, VectorProcessingStatus, ProjectDocument
 import logging
 from django.utils import timezone
 from django.db.models import Count
@@ -74,3 +74,40 @@ def update_collection_status_on_document_change(sender, instance, created, **kwa
     except Exception as e:
         logger.error(f"Error in signal handler: {e}")
         logger.exception(e)
+
+
+@receiver(post_delete, sender=ProjectDocument)
+def delete_document_file_from_storage(sender, instance, **kwargs):
+    """
+    Remove the uploaded file when its ProjectDocument row goes away.
+
+    ProjectDocument.file_path is a plain CharField rather than a FileField, and
+    nothing ever deleted the file behind it. Deleting a document - or a whole
+    project, which cascades to its documents - removed the database rows and
+    left the files on disk indefinitely. One such orphan was found during an
+    audit: a PDF whose project no longer existed, still readable on disk.
+
+    post_delete rather than an override of delete(), so this also fires for
+    cascades, queryset deletes and deletions from the Django admin.
+
+    Deliberately never raises: a failure to unlink must not roll back a
+    deletion the user asked for, or break a cascade half way through. Failures
+    are logged loudly enough to be found.
+    """
+    path = (instance.file_path or '').strip()
+    if not path:
+        return
+
+    try:
+        from django.core.files.storage import default_storage
+
+        if default_storage.exists(path):
+            default_storage.delete(path)
+            logger.info(f"Deleted file from storage for document {instance.document_id}: {path}")
+        else:
+            # Already gone - previously cleaned up, or never written.
+            logger.debug(f"No file to delete for document {instance.document_id}: {path}")
+    except Exception as e:
+        logger.error(
+            f"Failed to delete file for document {instance.document_id} ({path}): {e}"
+        )

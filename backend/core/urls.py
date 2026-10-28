@@ -3,7 +3,6 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
-from django.conf.urls.static import static
 from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import (
@@ -265,6 +264,16 @@ urlpatterns = [
 # The consolidated system automatically selects the optimal processing mode
 # based on project template configuration and capabilities
 
-# Serve media files during development
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Media files are deliberately NOT served over HTTP.
+#
+# This used to be `if settings.DEBUG: urlpatterns += static(MEDIA_URL, ...)`.
+# Because the live stack runs with DEBUG=True, that made every uploaded
+# document downloadable by anyone who knew its URL, with no authentication
+# and no project-membership check.
+#
+# Nothing needs it. Documents are downloaded through
+#   /api/projects/<project_id>/documents/<document_id>/download/
+# which is IsAuthenticated and resolves the project through a queryset scoped
+# to the caller, and document processing reads from storage directly via
+# default_storage, never over HTTP. The nginx /media/ locations were removed
+# at the same time.
