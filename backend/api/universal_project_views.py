@@ -2192,71 +2192,36 @@ class UniversalProjectViewSet(viewsets.ModelViewSet):
                 except Exception as e:
                     logger.error(f"❌ UNIVERSAL: Failed to delete vector collection: {e}")
                 
-                # Delete agent_orchestration deployment-related records BEFORE workflows
-                # This prevents foreign key constraint violations
+                # Delete deployment records through the ORM, so Django's collector
+                # walks the foreign keys itself.
+                #
+                # This used to be hand-written SQL that deleted each child table in
+                # a fixed order. That list fell behind the models: it never deleted
+                # DeploymentSessionFile (chat uploads) or DeploymentPublicLoginAttempt,
+                # both of which reference rows it did delete. Deleting any project
+                # whose chatbot had a file upload or a public login attempt therefore
+                # failed with a foreign key violation and surfaced in the UI as
+                # "Failed to delete the project".
+                #
+                # Every relation under WorkflowDeployment is on_delete=CASCADE, and
+                # DeploymentExecution.workflow_execution is SET_NULL, so one ORM
+                # delete removes the whole subtree and stays correct as models change.
                 try:
-                    with connection.cursor() as cursor:
-                        # Delete DeploymentExecution records (references WorkflowExecution)
-                        cursor.execute("""
-                            DELETE FROM agent_orchestration_deploymentexecution 
-                            WHERE workflow_execution_id IN (
-                                SELECT id FROM users_workflowexecution 
-                                WHERE workflow_id IN (
-                                    SELECT id FROM users_agentworkflow 
-                                    WHERE project_id = %s
-                                )
-                            )
-                        """, [project.id])
-                        deployment_executions_count = cursor.rowcount
-                        if deployment_executions_count > 0:
-                            logger.info(f"🗑️ UNIVERSAL: Deleted {deployment_executions_count} deployment executions")
-                        
-                        # Delete DeploymentSession records (references WorkflowDeployment)
-                        cursor.execute("""
-                            DELETE FROM agent_orchestration_deploymentsession 
-                            WHERE deployment_id IN (
-                                SELECT id FROM agent_orchestration_workflowdeployment 
-                                WHERE project_id = %s
-                            )
-                        """, [project.id])
-                        deployment_sessions_count = cursor.rowcount
-                        if deployment_sessions_count > 0:
-                            logger.info(f"🗑️ UNIVERSAL: Deleted {deployment_sessions_count} deployment sessions")
-                        
-                        # Delete WorkflowDeploymentRequest records (references WorkflowDeployment)
-                        cursor.execute("""
-                            DELETE FROM agent_orchestration_workflowdeploymentrequest 
-                            WHERE deployment_id IN (
-                                SELECT id FROM agent_orchestration_workflowdeployment 
-                                WHERE project_id = %s
-                            )
-                        """, [project.id])
-                        deployment_requests_count = cursor.rowcount
-                        if deployment_requests_count > 0:
-                            logger.info(f"🗑️ UNIVERSAL: Deleted {deployment_requests_count} deployment requests")
-                        
-                        # Delete WorkflowAllowedOrigin records (references WorkflowDeployment)
-                        cursor.execute("""
-                            DELETE FROM agent_orchestration_workflowallowedorigin 
-                            WHERE deployment_id IN (
-                                SELECT id FROM agent_orchestration_workflowdeployment 
-                                WHERE project_id = %s
-                            )
-                        """, [project.id])
-                        allowed_origins_count = cursor.rowcount
-                        if allowed_origins_count > 0:
-                            logger.info(f"🗑️ UNIVERSAL: Deleted {allowed_origins_count} allowed origins")
-                        
-                        # Delete WorkflowDeployment records (references AgentWorkflow)
-                        cursor.execute("""
-                            DELETE FROM agent_orchestration_workflowdeployment 
-                            WHERE project_id = %s
-                        """, [project.id])
-                        workflow_deployments_count = cursor.rowcount
-                        if workflow_deployments_count > 0:
-                            logger.info(f"🗑️ UNIVERSAL: Deleted {workflow_deployments_count} workflow deployments")
+                    from agent_orchestration.models import WorkflowDeployment
+
+                    deployments = WorkflowDeployment.objects.filter(project=project)
+                    deployments_count = deployments.count()
+                    if deployments_count > 0:
+                        _, per_model = deployments.delete()
+                        logger.info(
+                            f"🗑️ UNIVERSAL: Deleted {deployments_count} workflow deployments "
+                            f"and their dependants: {per_model}"
+                        )
                 except Exception as deployment_error:
-                    logger.warning(f"⚠️ UNIVERSAL: Error deleting deployment records (may not exist): {deployment_error}")
+                    logger.error(
+                        f"❌ UNIVERSAL: Error deleting deployment records: {deployment_error}"
+                    )
+                    raise
                 
                 # Delete all agent workflows (this will cascade delete evaluations, execution history, etc.)
                 workflows_count = project.agent_workflows.count()
