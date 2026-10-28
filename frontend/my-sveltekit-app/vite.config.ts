@@ -20,6 +20,48 @@ export default defineConfig({
         });
       },
     },
+    // Public dev server: bot scanners sweep /src/ and /@fs/ for credential
+    // files (.env, .git-credentials, terraform.tfstate, nginx.conf, ...).
+    // Vite treats anything under those prefixes as a module load, so a miss
+    // becomes an "Internal server error" that is broadcast over HMR -- which
+    // paints an error overlay in every connected browser, indistinguishable
+    // from a real build failure. Nothing leaks (fs.allow already answers 403),
+    // so this only stops the noise: answer probes with a plain 404 before the
+    // transform middleware tries to open them.
+    {
+      name: 'config-probe-guard',
+      configureServer(server) {
+        // Scoped to the module-loader prefixes so real app routes never match.
+        const LOADER_PREFIX = /^\/(?:src|@fs)\//;
+        const PROBE = new RegExp(
+          // credential dotfiles, by exact basename
+          '(?:^|/)(?:\\.env(?:\\.[\\w.-]+)?|\\.netrc|\\.pypirc|\\.git-credentials'
+          + '|\\.htpasswd|\\.dockercfg|id_rsa[\\w.]*'
+          // credential JSON by exact name -- .json is NOT blanket-blocked,
+          // because apps legitimately import data as .json
+          + '|gcp-key\\.json|serviceAccountKey\\.json'
+          + '|firebase-service-account\\.json|service-account\\.json)$'
+          // config/state/secret extensions never imported by this app
+          + '|\\.(?:ya?ml|conf|cnf|ini|properties|php|tfvars|tfstate|pem|key'
+          + '|crt|p12|pfx|sql|bak|swp|old|log|py|prisma)$',
+          'i',
+        );
+        server.middlewares.use((req, res, next) => {
+          let pathname;
+          try {
+            pathname = new URL(req.url || '', 'http://localhost').pathname;
+          } catch {
+            return next(); // malformed-uri-guard above already handled these
+          }
+          if (LOADER_PREFIX.test(pathname) && PROBE.test(pathname)) {
+            res.statusCode = 404;
+            res.end('Not Found');
+            return;
+          }
+          next();
+        });
+      },
+    },
     sveltekit(),
   ],
   
