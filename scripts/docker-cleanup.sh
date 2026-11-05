@@ -7,6 +7,14 @@ set -e
 
 echo "🧹 Docker Space Cleanup - AI Catalogue"
 echo "==============================================="
+echo ""
+echo "⚠️  THIS TAKES THE SITE OFFLINE."
+echo "   It runs 'docker compose down --remove-orphans', which stops and REMOVES"
+echo "   every container in the stack, then prunes images, networks and build cache."
+echo "   Data volumes are preserved, but the site stays down until you restart it:"
+echo ""
+echo "       ./scripts/restart-dev.sh"
+echo ""
 
 # Function to show disk space
 show_space() {
@@ -26,7 +34,8 @@ list_preserved_volumes() {
     echo "   - ai_catalogue_etcd_data"
     echo "   - ai_catalogue_minio_data"
     echo "   - ai_catalogue_pgadmin_data"
-    echo "   - ./volumes/* (bind mounts)"
+    echo "   - ai_catalogue_redis_data"
+    echo "   - ai_catalogue_backend_media / _logs / _static"
     echo ""
 }
 
@@ -158,10 +167,12 @@ echo ""
 
 echo "✅ All your data volumes have been preserved!"
 echo ""
-echo "🚀 Next steps:"
-echo "   1. Run your start-dev.sh script to rebuild and start containers"
-echo "   2. Your database data and configurations will be intact"
-echo "   3. Docker will download/rebuild only what's needed"
+echo "🚀 THE STACK IS NOW DOWN. To bring it back:"
+echo ""
+echo "   ./scripts/restart-dev.sh      # normal case — images survived, ~2 min"
+echo "   ./scripts/start-dev.sh        # only if images were also removed (full rebuild, ~10 min)"
+echo ""
+echo "   Your database, vector data and configuration are intact either way."
 echo ""
 
 echo "📋 If you need to reclaim more space, you can also:"

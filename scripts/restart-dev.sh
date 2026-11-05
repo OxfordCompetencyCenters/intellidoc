@@ -106,6 +106,21 @@ if [ "$MILVUS_HEALTHY" = "false" ]; then
     echo "⚠️  Milvus health check timed out. Application will continue startup."
 fi
 
+echo "🔴 Step 4: Starting Redis cache..."
+docker compose up -d redis
+
+echo "⏳ Waiting for Redis to accept connections..."
+REDIS_COUNTER=0
+until docker compose exec -T redis redis-cli PING >/dev/null 2>&1 || [ $REDIS_COUNTER -ge 30 ]; do
+    sleep 2
+    REDIS_COUNTER=$((REDIS_COUNTER + 2))
+done
+if [ $REDIS_COUNTER -ge 30 ]; then
+    echo "⚠️  Redis did not respond in 30s. Continuing — the web-search cache will be cold."
+else
+    echo "✅ Redis ready"
+fi
+
 echo "🐍 Step 5: Starting Django backend..."
 docker compose -f docker-compose.yml -f docker-compose.override.yml up -d backend --no-deps
 

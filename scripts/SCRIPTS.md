@@ -80,6 +80,8 @@ This works only because the backend runs `runserver` against a bind mount. It is
 
 ### `restart-dev.sh` — bounce the stack
 
+Start here after `docker-cleanup.sh`, or any time the containers are gone but the images are not.
+
 Same ordered, health-gated startup as `start-dev.sh` but with no build and no image pull. This is the everyday "turn it off and on again".
 
 ---
@@ -134,7 +136,7 @@ move it without updating cron.
 
 | Script | What it does |
 |---|---|
-| `docker-cleanup.sh` | Interactive. Stops the stack, removes exited containers, dangling images, unused networks and build cache. **Never touches volumes.** Its claim that `./volumes/*` holds preserved data is wrong — those directories are mounted by nothing. |
+| `docker-cleanup.sh` | Interactive. **Takes the site offline and leaves it that way.** It runs `docker compose down --remove-orphans`, so every container is removed, then prunes images, networks and build cache. **Named volumes are never touched**, so no data is lost — but nothing restarts automatically. Follow it with `./scripts/restart-dev.sh`. Pruning also clears the Hugging Face embedding-model cache, so the first backend start afterwards re-downloads `all-MiniLM-L6-v2` and takes ~1 min longer. |
 | `stop.sh` | Stops frontend, nginx, backend, milvus, postgres, etcd, minio, pgadmin. **Leaves `redis`, `attu` and `frontend-dev` running** — use `docker compose stop` if you want everything down. |
 | `fix-frontend-cache.sh` | Deletes the Vite caches to clear stale-chunk 404s. |
 | `reset.sh` | **Destructive.** `docker compose down -v`, deletes `./volumes` and `./logs`, wipes frontend and backend caches. Destroys the database, every uploaded document, and all vector data. There is no backup tooling in this repository — take a dump first (see DEPLOYMENT.md §9). |
