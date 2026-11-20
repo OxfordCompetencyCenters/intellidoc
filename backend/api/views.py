@@ -638,12 +638,56 @@ class IntelliDocProjectViewSet(viewsets.ModelViewSet):
                             # Log but continue with deletion
                             pass
                 
-                # Delete vector collections if they exist
+                # Drop the project's Milvus collections, then its bookkeeping row.
+                #
+                # Deleting project.vector_collection only removes the Postgres
+                # record -- the vectors themselves used to survive in Milvus
+                # forever, one orphaned collection per deleted project.
+                #
+                # Collections are matched by the project UUID suffix rather than
+                # rebuilt from the project name: a project carries more than one
+                # collection (documents plus "websearch_<uuid>"), and the
+                # name-sanitising logic has drifted between call sites before, so
+                # a reconstructed name can miss the collection that actually
+                # exists. The UUID suffix is stable regardless of naming.
+                dropped_collections = []
+                try:
+                    from django.conf import settings
+                    from pymilvus import connections, utility
+
+                    uuid_suffix = str(project_id).replace('-', '_')
+                    alias = f'delete_{uuid_suffix[:8]}'
+                    connections.connect(
+                        alias=alias,
+                        host=settings.MILVUS_HOST,
+                        port=str(settings.MILVUS_PORT),
+                        user=getattr(settings, 'MILVUS_USER', 'root'),
+                        password=settings.MILVUS_PASSWORD,
+                    )
+                    try:
+                        for name in utility.list_collections(using=alias):
+                            if name.endswith(uuid_suffix):
+                                utility.drop_collection(name, using=alias)
+                                dropped_collections.append(name)
+                    finally:
+                        connections.disconnect(alias)
+                except Exception as exc:
+                    # Never block the delete on Milvus being unreachable, but do
+                    # not hide it either -- a silent failure here is what let the
+                    # orphans accumulate unnoticed.
+                    logger.warning(
+                        'Project %s: Milvus cleanup failed, collections may be '
+                        'orphaned: %s', project_id, exc
+                    )
+
                 try:
                     if hasattr(project, 'vector_collection'):
                         project.vector_collection.delete()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        'Project %s: could not delete vector_collection row: %s',
+                        project_id, exc
+                    )
                 
                 # Delete all agent workflows if they exist
                 workflows_count = 0
@@ -662,6 +706,7 @@ class IntelliDocProjectViewSet(viewsets.ModelViewSet):
                     "deleted_documents": documents_count,
                     "deleted_files": deleted_files,
                     "deleted_workflows": workflows_count,
+                    "dropped_collections": dropped_collections,
                     "deleted_by": request.user.email,
                     "deleted_at": timezone.now().isoformat()
                 }, status=status.HTTP_200_OK)
