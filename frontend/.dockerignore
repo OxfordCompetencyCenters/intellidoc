@@ -1,7 +1,10 @@
 # Frontend Docker Ignore File
 
-# Node modules
+# Node modules (match at any depth, not just the context root --
+# a bare 'node_modules/' only excludes ./frontend/node_modules, which let
+# the host's stale my-sveltekit-app/node_modules overwrite the image's)
 node_modules/
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

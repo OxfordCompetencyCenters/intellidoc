@@ -43,12 +43,18 @@ done <<< "$staged_files"
 # Only added lines (^+) are considered, so pre-existing history does not block work.
 added=$(git diff --cached -U0 --diff-filter=ACMR | grep '^+' | grep -v '^+++' || true)
 
-scan() {  # scan <regex> <human description>
-    local hits
-    hits=$(printf '%s\n' "$added" | grep -nEc "$1" 2>/dev/null || true)
+scan() {  # scan <regex> <human description> [exclude regex]
+    local hits subject
+    subject=$added
+    # Optional third argument drops lines that are known-benign for this rule,
+    # so one noisy pattern does not have to be weakened for everything else.
+    if [ -n "${3:-}" ]; then
+        subject=$(printf '%s\n' "$subject" | grep -vE "$3" || true)
+    fi
+    hits=$(printf '%s\n' "$subject" | grep -nEc "$1" 2>/dev/null || true)
     if [ "${hits:-0}" -gt 0 ]; then
         note "${RED}BLOCKED${NC} $2 (${hits} added line(s))"
-        printf '%s\n' "$added" | grep -nE "$1" | head -3 \
+        printf '%s\n' "$subject" | grep -nE "$1" | head -3 \
           | sed -E 's/(sk-ant-|sk-|AIza|ghp_|AKIA|xox.-)[A-Za-z0-9_-]{6,}/\1<REDACTED>/g' \
           | sed 's/^/        /'
         fail=1
@@ -71,7 +77,11 @@ scan 'BEGIN [A-Z ]*PRIVATE KEY'                   'private key block'
 # default (${VAR:-<key>}). Matched anywhere on the line rather than only after
 # an assignment, because that form put the value after ':-' where an
 # assignment-anchored pattern misses it.
-scan '[A-Za-z0-9_-]{43}=' 'Fernet-style key literal (43 chars + "=")'
+# npm/yarn record tarball checksums as "integrity": "sha512-<base64>", whose
+# tail has the same 43-char-plus-'=' shape. Those are public registry metadata,
+# so lockfile checksum lines are excluded rather than relaxing the pattern.
+scan '[A-Za-z0-9_-]{43}=' 'Fernet-style key literal (43 chars + "=")' \
+     '"integrity"[[:space:]]*:[[:space:]]*"sha(256|384|512)-'
 
 # Obvious inline credential assignment with a real-looking value. Placeholders,
 # interpolation and env lookups are all excluded.
