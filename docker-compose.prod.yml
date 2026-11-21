@@ -32,6 +32,10 @@ services:
     environment:
       ENVIRONMENT: production
       DEBUG: "False"
+      # See Dockerfile.prod: each worker loads the full ML stack, so processes
+      # are expensive and threads are cheap for this I/O-bound workload.
+      GUNICORN_WORKERS: "2"
+      GUNICORN_THREADS: "4"
       CORS_ALLOW_ALL_ORIGINS: "False"
       # Database connection pooling for production
       DB_CONN_MAX_AGE: 600
@@ -48,11 +52,17 @@ services:
       # orchestrator, not this file.
       resources:
         limits:
+          # The host has 2 cores and 7.7 GB. A single Django process already
+          # sits at ~1.9 GB once sentence-transformers and torch are loaded, so
+          # the old 2G/1.0-CPU cap could not hold even one Gunicorn worker, let
+          # alone four: the container thrashed and database connections timed
+          # out as "connection timeout expired" -- a starved process, not a
+          # network fault.
+          cpus: '2.0'
+          memory: 5G
+        reservations:
           cpus: '1.0'
           memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
       interval: 30s

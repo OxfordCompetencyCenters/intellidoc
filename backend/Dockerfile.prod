@@ -117,12 +117,25 @@ RUN mkdir -p /app/media /app/logs /app/volumes /app/staticfiles
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
+# Create the model-cache directory before dropping privileges. A named volume
+# mounted here inherits the ownership of the image's directory; if the path does
+# not exist in the image, Docker creates the volume root-owned and appuser then
+# cannot write it -- sentence-transformers fails with EACCES, every embedding
+# returns nothing, and web search silently answers "no relevant content".
+RUN mkdir -p /home/appuser/.cache && chown -R appuser:appuser /home/appuser/.cache
+
 USER appuser
 
 # Expose port
 EXPOSE 8000
 
 # Production startup script
+# Worker counts are env-tunable because each worker loads the full ML stack
+# (sentence-transformers + torch): a single Django process already resides at
+# ~1.9 GB, so "workers x 4" multiplies that rather than sharing it. The default
+# is 2 workers / 4 threads -- this workload blocks on LLM and Milvus I/O, not
+# CPU, so threads buy concurrency far more cheaply than processes do.
+#
 # 1. Collect static files
 # 2. Run database migrations
 # 3. Setup container data
@@ -137,8 +150,8 @@ CMD ["sh", "-c", "\
     echo 'Starting Gunicorn production server...' && \
     exec gunicorn core.wsgi:application \
         --bind 0.0.0.0:8000 \
-        --workers 4 \
-        --threads 2 \
+        --workers ${GUNICORN_WORKERS:-2} \
+        --threads ${GUNICORN_THREADS:-4} \
         --timeout 300 \
         --keep-alive 5 \
         --max-requests 1000 \
