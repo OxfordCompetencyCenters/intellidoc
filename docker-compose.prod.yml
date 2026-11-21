@@ -23,6 +23,12 @@ services:
       - milvus_volumes:/app/volumes
       # collectstatic output, shared read-only with nginx which serves /static/
       - backend_static:/app/staticfiles
+      # sentence-transformers downloads all-MiniLM-L6-v2 (~88 MB) on first use.
+      # The dev container only still has it because it has not been recreated;
+      # it sits in the image filesystem, not a volume. Without this mount every
+      # force-recreate re-downloads it from HuggingFace, making startup slow and
+      # dependent on that service being reachable.
+      - backend_model_cache:/home/appuser/.cache
     environment:
       ENVIRONMENT: production
       DEBUG: "False"
@@ -52,7 +58,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      # 60s is not enough on a cold cache: the first boot after the model
+      # cache volume is created downloads the embedding model before
+      # Gunicorn starts serving.
+      start_period: 300s
 
   # Production Frontend Configuration
   frontend:
@@ -165,6 +174,7 @@ networks:
 # Declared so this overlay can be used with `-f docker-compose.yml -f
 # docker-compose.prod.yml`; they are the same external volumes the dev stack uses.
 volumes:
+  backend_model_cache:
   backend_media_dev:
   backend_logs_dev:
   milvus_volumes:
