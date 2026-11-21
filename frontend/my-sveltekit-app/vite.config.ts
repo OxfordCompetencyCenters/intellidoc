@@ -40,7 +40,20 @@ export default defineConfig({
           // credential JSON by exact name -- .json is NOT blanket-blocked,
           // because apps legitimately import data as .json
           + '|gcp-key\\.json|serviceAccountKey\\.json'
-          + '|firebase-service-account\\.json|service-account\\.json)$'
+          + '|firebase-service-account\\.json|service-account\\.json'
+            // Build-config files, by exact basename. These end in .ts/.js, which
+            // CANNOT be blanket-blocked -- the app's own modules use those
+            // extensions and Vite serves them through these same prefixes. Scans
+            // for them reached Vite's module loader, where the miss became an
+            // "Internal server error" that HMR broadcast to every connected
+            // browser as a full-screen overlay. Client code never imports any of
+            // these, so answering 404 early is safe.
+            + '|vite\\.config\\.[cm]?[jt]s|svelte\\.config\\.[cm]?[jt]s'
+            + '|tailwind\\.config\\.[cm]?[jt]s|postcss\\.config\\.[cm]?[jt]s'
+            + '|rollup\\.config\\.[cm]?[jt]s|webpack\\.config\\.[cm]?[jt]s'
+            + '|next\\.config\\.[cm]?[jt]s|nuxt\\.config\\.[cm]?[jt]s'
+            + '|astro\\.config\\.[cm]?[jt]s|vitest\\.config\\.[cm]?[jt]s'
+            + '|playwright\\.config\\.[cm]?[jt]s)$'
           // config/state/secret extensions never imported by this app
           + '|\\.(?:ya?ml|conf|cnf|ini|properties|php|tfvars|tfstate|pem|key'
           + '|crt|p12|pfx|sql|bak|swp|old|log|py|prisma)$',
