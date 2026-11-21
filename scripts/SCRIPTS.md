@@ -2,6 +2,8 @@
 
 Every shell script in this directory, verified against its source. Deeper context lives in [`../docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
 
+> **The host currently runs the PRODUCTION stack** (since 2026-11-21). Every script here except `production.sh` targets the development stack, and `quick-deploy.sh`, `rebuild-deploy.sh` and `restart-dev.sh` now refuse to run while `ai_catalogue_frontend` is up rather than swapping the built frontend for the Vite dev server.
+>
 > **All of these except `production.sh` run the development stack.** `docker-compose.override.yml` sits in the repository root, so Docker Compose auto-merges it into any bare `docker compose …` command — which means `runserver`, `DEBUG=True`, and the Vite dev server. Only `production.sh` passes `-f docker-compose.yml -f docker-compose.prod.yml` to exclude it.
 
 ---
@@ -98,7 +100,11 @@ The only script that runs the production overlay:
 
 Sets `ENVIRONMENT=production`, `DEBUG=False`, and starts with `-f docker-compose.yml -f docker-compose.prod.yml`.
 
-> **The two defects that blocked this path were fixed on 2026-10-28** (B1 and B2 in [`../docs/KNOWN_ISSUES.md`](../docs/KNOWN_ISSUES.md)): Gunicorn now runs `core.wsgi:application`, and `/health/` is a registered route. The overlay has not yet been exercised under sustained production load, so treat the first run as a deployment, not a formality — and note `deploy.replicas: 2` remains a no-op under `docker compose`.
+> **This path now works and is what the host runs.** B1 and B2 were fixed on 2026-10-28 (Gunicorn runs `core.wsgi:application`; `/health/` is a registered route), and two further defects were fixed on 2026-11-21 when the overlay was first exercised: the backend's 1.0-CPU/2G cap could not hold even one Gunicorn worker (now 2.0 CPU / 5G, 2 workers x 4 threads), and the `backend_model_cache` volume was root-owned while the container runs as `appuser`, which broke every embedding and made web search answer with no citations while still returning HTTP 200.
+>
+> `deploy.replicas: 2` remains a no-op under `docker compose`. The overlay still has not seen sustained load.
+>
+> To switch back to development: `docker compose stop frontend && docker compose up -d`.
 
 ### `setup-ssl.sh`
 
