@@ -1,0 +1,54 @@
+# Public Chat URL framing allowlist  —  TEMPLATE
+#
+# Copy this file to chat-framing.conf in the same directory and add one entry
+# per deployment whose Public Chat URL (/chat/<project_id>) is deliberately
+# embedded in an iframe on another site:
+#
+#     cp nginx/framing/chat-framing.conf.example nginx/framing/chat-framing.conf
+#
+# chat-framing.conf is NOT tracked in git, because it names customer projects
+# and the sites allowed to embed them. This template is tracked; the real file
+# is deliberately not. nginx.prod.conf includes it, so it must exist before the
+# production stack starts — the same arrangement as .env / .env.example.
+#
+# WHY THIS EXISTS
+# /chat/<project_id> is served by the SvelteKit app, so Django cannot attach
+# framing headers to it the way it does for /api/workflow-deploy/<id>/embed/.
+# The server-level `add_header X-Frame-Options "SAMEORIGIN" always` therefore
+# applies to it, and a third-party iframe fails with "refused to connect".
+#
+# FAIL-SAFE BY DEFAULT
+# A project with no entry below falls through to the empty default, which keeps
+# X-Frame-Options in place. A deployment that uses the Public Chat URL password
+# form must therefore have NO entry here, so its login form cannot be
+# clickjacked. Only list deployments whose public URL is embedded on purpose.
+#
+# KEEPING IT IN STEP WITH THE DATABASE
+# This mirrors the WorkflowAllowedOrigin rows Django reads for the embed
+# endpoint; nginx cannot query the database, so it does not follow edits made
+# in the Deploy tab. Regenerate after changing origins there:
+#
+#   SELECT p.project_id, string_agg(o.origin, ' ')
+#     FROM agent_orchestration_workflowallowedorigin o
+#     JOIN agent_orchestration_workflowdeployment d ON d.id = o.deployment_id
+#     JOIN users_intellidocproject p ON p.id = d.project_id
+#    WHERE o.is_active AND d.is_active GROUP BY p.project_id;
+#
+# A frame-ancestors host-source carries no path, so an origin stored with one
+# (https://example.gitbook.io/space) is reduced to its scheme://host here.
+
+map $uri $chat_frame_ancestors {
+    default "";
+
+    # One line per embedded deployment, e.g.:
+    # "~^/chat/00000000-0000-0000-0000-000000000000/?$" "frame-ancestors 'self' https://example.org";
+}
+
+# An allowlist and X-Frame-Options cannot coexist: the latter is all-or-nothing,
+# and a browser enforces the stricter of the two, so it would veto the
+# allowlist. Send it only when there is no allowlist. nginx omits an add_header
+# whose value is an empty string.
+map $chat_frame_ancestors $chat_xframe_options {
+    ""      "SAMEORIGIN";
+    default "";
+}

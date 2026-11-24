@@ -368,3 +368,8 @@ kubeconfig
 # Database dumps / archives that may embed data
 *.dump
 *.bak
+
+# nginx Public Chat URL framing allowlist: names customer projects and the
+# sites allowed to embed them, so the live file stays out of this public repo.
+# The tracked template is nginx/framing/chat-framing.conf.example.
+nginx/framing/chat-framing.conf

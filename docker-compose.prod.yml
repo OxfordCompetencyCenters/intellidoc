@@ -159,6 +159,11 @@ services:
     volumes:
       - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
+      # Public Chat URL framing allowlist, included by nginx.prod.conf. The
+      # real file is untracked (it names customer projects and the sites
+      # allowed to embed them); copy nginx/framing/chat-framing.conf.example
+      # to nginx/framing/chat-framing.conf before starting this stack.
+      - ./nginx/framing:/etc/nginx/framing:ro
       # Under Gunicorn with DEBUG=False Django does not serve /static/, so
       # nginx serves it from the backend's collectstatic volume. /media/ is
       # deliberately NOT mounted: documents go through the authenticated

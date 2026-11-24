@@ -74,6 +74,22 @@ To reach a loopback-bound service from your workstation, use an SSH tunnel rathe
 
 Copy `.env.example` to `.env` and fill in the values marked REQUIRED. Variables without a compose default will stop the stack from starting if unset, which is deliberate — it is safer than falling back to a value published in this repository.
 
+The production proxy needs one more copied file:
+
+```bash
+cp nginx/framing/chat-framing.conf.example nginx/framing/chat-framing.conf
+```
+
+`nginx.prod.conf` includes that file to define the Public Chat URL framing
+allowlist, and nginx refuses to start on an unknown variable, so a missing copy
+fails loudly with `open() "/etc/nginx/framing/chat-framing.conf" failed`. It is
+untracked for the same reason as `.env`: it names customer projects and the
+sites allowed to iframe their `/chat/<project_id>` page, and this repository is
+public. The template's own comments explain when to add an entry — and, just as
+importantly, when not to: a deployment using the Public Chat URL password form
+must have no entry, so its login form keeps `X-Frame-Options` and cannot be
+clickjacked.
+
 ### Genuinely required
 
 | Variable | Why |
@@ -370,6 +386,7 @@ already covered.
 
 ```bash
 cp .env.example .env          # fill in every value marked REQUIRED
+cp nginx/framing/chat-framing.conf.example nginx/framing/chat-framing.conf
 ./scripts/start-dev.sh        # first run: 8-12 min
 ./scripts/bootstrap.sh        # rotates the Milvus password, seeds providers, creates an admin
 ```
