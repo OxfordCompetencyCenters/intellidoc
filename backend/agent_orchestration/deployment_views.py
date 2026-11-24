@@ -3101,6 +3101,45 @@ def upload_chat_file(request, project_id):
         return response
 
 
+def _frame_ancestors_csp(deployment) -> str:
+    """Build a CSP `frame-ancestors` directive from the deployment's origins.
+
+    The embed view is xframe_options_exempt because third-party sites are
+    *meant* to iframe it — that is the whole product. X-Frame-Options cannot
+    express an allowlist (it is only SAMEORIGIN or DENY), so clickjacking
+    protection for this endpoint is carried by frame-ancestors instead, built
+    from the same WorkflowAllowedOrigin rows that govern the chat API's CORS.
+
+    Origins are stored as the operator typed them and may carry a path
+    (e.g. 'https://fairsharing.gitbook.io/fairsharing'), but a frame-ancestors
+    host-source must not, so each is reduced to scheme://host[:port].
+    """
+    from urllib.parse import urlsplit
+
+    sources = ["'self'"]
+    seen = set()
+    try:
+        origins = list(deployment.allowed_origins.filter(is_active=True))
+    except Exception as exc:
+        logger.warning(
+            '⚠️ EMBED CSP: could not read allowed origins for deployment %s: %s',
+            getattr(deployment, 'id', '?'), exc,
+        )
+        origins = []
+    for row in origins:
+        raw = (getattr(row, 'origin', '') or '').strip()
+        if not raw:
+            continue
+        parts = urlsplit(raw if '//' in raw else f'//{raw}', scheme='https')
+        if not parts.hostname:
+            continue
+        source = f'{parts.scheme}://{parts.netloc}'
+        if source not in seen:
+            seen.add(source)
+            sources.append(source)
+    return 'frame-ancestors ' + ' '.join(sources)
+
+
 @csrf_exempt
 @xframe_options_exempt
 def embed_chatbot_html(request, project_id):
@@ -5150,6 +5189,13 @@ def embed_chatbot_html(request, project_id):
         # Remove restrictive headers that block fetch from cross-origin iframes
         response['Cross-Origin-Opener-Policy'] = 'unsafe-none'
         response['Cross-Origin-Embedder-Policy'] = 'unsafe-none'
+        # Framing allowlist. @xframe_options_exempt only stops Django sending
+        # X-Frame-Options; it grants nothing. Without this directive the embed
+        # is frameable by *any* site, so state the permitted parents here from
+        # the deployment's own allowed-origin rows. Note that nginx must not
+        # add X-Frame-Options to this path — it would override the allowlist
+        # and break every third-party embed (see nginx.prod.conf).
+        response['Content-Security-Policy'] = _frame_ancestors_csp(deployment)
         # Make the no-cache posture explicit: this HTML can contain preloaded
         # per-session conversation_history (when ?session_id= is present), so
         # caching across users or even across reloads would surface stale or
